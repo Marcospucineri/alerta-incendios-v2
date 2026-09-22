@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1a1d21" />
+    <title>Detección de Columnas de Humo</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/app.css" />
+  </head>
+  <body>
+    <div id="map" aria-label="Mapa de triangulación"></div>
+
+    <!-- Panel principal -->
+    <section class="panel" id="panel">
+      <header class="panel__head">
+        <h1 class="panel__title">Columnas de humo</h1>
+        <button class="icon-btn" id="toggle-panel" aria-label="Contraer panel" aria-expanded="true">
+          <span aria-hidden="true">▾</span>
+        </button>
+      </header>
+
+      <div class="panel__body" id="panel-body">
+        <p class="hint" id="intro">
+          Cargá dos observaciones de la misma columna para estimar dónde está el foco.
+        </p>
+
+        <!-- Observación A -->
+        <article class="obs" id="obs-a" data-slot="A">
+          <div class="obs__head">
+            <span class="obs__badge obs__badge--a">1</span>
+            <span class="obs__title">Observación 1</span>
+            <button class="link-btn obs__clear" data-clear="A" hidden>Borrar</button>
+          </div>
+          <div class="obs__empty" data-empty>
+            <button class="btn btn--primary" data-action="gps" data-slot="A">Mi ubicación</button>
+            <button class="btn" data-action="map" data-slot="A">Tocar el mapa</button>
+            <button class="btn" data-action="manual" data-slot="A">Cargar a mano</button>
+          </div>
+          <div class="obs__filled" data-filled hidden>
+            <dl class="kv">
+              <dt>Coordenadas</dt><dd data-field="coords">—</dd>
+              <dt>Azimut</dt><dd data-field="azimuth">—</dd>
+            </dl>
+            <div class="az-row">
+              <button class="btn btn--compass" data-action="compass" data-slot="A">
+                Medir con brújula
+              </button>
+              <button class="btn" data-action="azimuth" data-slot="A">Escribir azimut</button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Observación B -->
+        <article class="obs" id="obs-b" data-slot="B" hidden>
+          <div class="obs__head">
+            <span class="obs__badge obs__badge--b">2</span>
+            <span class="obs__title">Observación 2</span>
+            <button class="link-btn obs__clear" data-clear="B" hidden>Borrar</button>
+          </div>
+          <div class="obs__empty" data-empty>
+            <button class="btn btn--primary" data-action="gps" data-slot="B">Mi ubicación</button>
+            <button class="btn" data-action="map" data-slot="B">Tocar el mapa</button>
+            <button class="btn" data-action="manual" data-slot="B">Cargar a mano</button>
+          </div>
+          <div class="obs__filled" data-filled hidden>
+            <dl class="kv">
+              <dt>Coordenadas</dt><dd data-field="coords">—</dd>
+              <dt>Azimut</dt><dd data-field="azimuth">—</dd>
+            </dl>
+            <div class="az-row">
+              <button class="btn btn--compass" data-action="compass" data-slot="B">
+                Medir con brújula
+              </button>
+              <button class="btn" data-action="azimuth" data-slot="B">Escribir azimut</button>
+            </div>
+          </div>
+        </article>
+
+        <!-- Resultado -->
+        <article class="result" id="result" hidden>
+          <div class="result__head">
+            <span class="result__title">Foco estimado</span>
+            <span class="chip" id="quality-chip"></span>
+          </div>
+          <dl class="kv">
+            <dt>Coordenadas</dt><dd id="res-coords">—</dd>
+            <dt>Distancia</dt><dd id="res-dist">—</dd>
+            <dt>Incertidumbre</dt><dd id="res-unc">—</dd>
+          </dl>
+          <div class="result__actions">
+            <button class="btn btn--primary" id="share-wa">Compartir por WhatsApp</button>
+            <button class="btn" id="copy-coords">Copiar</button>
+          </div>
+        </article>
+
+        <div class="panel__foot">
+          <label class="err-row">
+            <span>Error de brújula: <output id="err-out">±3°</output></span>
+            <input type="range" id="err-range" min="1" max="10" step="1" value="3" />
+          </label>
+          <button class="btn btn--danger" id="reset">Reiniciar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Overlay de brújula -->
+    <div class="overlay" id="compass-overlay" hidden>
+      <div class="compass-card">
+        <h2 class="compass-card__title">Apuntá hacia la columna</h2>
+        <div class="rose" id="rose">
+          <svg viewBox="0 0 200 200" class="rose__svg" aria-hidden="true">
+            <circle cx="100" cy="100" r="92" class="rose__ring" />
+            <g id="rose-dial">
+              <line x1="100" y1="12" x2="100" y2="30" class="rose__tick rose__tick--n" />
+              <line x1="188" y1="100" x2="170" y2="100" class="rose__tick" />
+              <line x1="100" y1="188" x2="100" y2="170" class="rose__tick" />
+              <line x1="12" y1="100" x2="30" y2="100" class="rose__tick" />
+              <text x="100" y="48" class="rose__label">N</text>
+              <text x="152" y="105" class="rose__label">E</text>
+              <text x="100" y="162" class="rose__label">S</text>
+              <text x="48" y="105" class="rose__label">O</text>
+            </g>
+            <polygon points="100,28 110,58 100,50 90,58" class="rose__needle" />
+          </svg>
+          <div class="rose__readout"><span id="rose-deg">—</span></div>
+        </div>
+        <p class="compass-warn" id="compass-warn" hidden></p>
+        <p class="hint" id="compass-note">
+          Sostené el teléfono horizontal y apuntá el borde superior hacia el humo.
+        </p>
+        <div class="compass-card__actions">
+          <button class="btn" id="compass-cancel">Cancelar</button>
+          <button class="btn btn--primary" id="compass-accept">Fijar lectura</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Diálogo de carga manual -->
+    <div class="overlay" id="manual-overlay" hidden>
+      <form class="manual-card" id="manual-form">
+        <h2 class="compass-card__title" id="manual-title">Cargar coordenadas</h2>
+
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab is-active" data-tab="dec" role="tab">Decimal</button>
+          <button type="button" class="tab" data-tab="dms" role="tab">GMS</button>
+          <button type="button" class="tab" data-tab="utm" role="tab">UTM</button>
+        </div>
+
+        <div class="tabpane is-active" data-pane="dec">
+          <label class="field"><span>Latitud</span>
+            <input type="number" step="any" id="dec-lat" placeholder="-31.978056" /></label>
+          <label class="field"><span>Longitud</span>
+            <input type="number" step="any" id="dec-lng" placeholder="-64.558333" /></label>
+        </div>
+
+        <div class="tabpane" data-pane="dms">
+          <fieldset class="dms">
+            <legend>Latitud (Sur)</legend>
+            <input type="number" id="dms-lat-d" placeholder="31" aria-label="Grados latitud" />
+            <input type="number" id="dms-lat-m" placeholder="58" aria-label="Minutos latitud" />
+            <input type="number" step="any" id="dms-lat-s" placeholder="41" aria-label="Segundos latitud" />
+          </fieldset>
+          <fieldset class="dms">
+            <legend>Longitud (Oeste)</legend>
+            <input type="number" id="dms-lng-d" placeholder="64" aria-label="Grados longitud" />
+            <input type="number" id="dms-lng-m" placeholder="33" aria-label="Minutos longitud" />
+            <input type="number" step="any" id="dms-lng-s" placeholder="30" aria-label="Segundos longitud" />
+          </fieldset>
+        </div>
+
+        <div class="tabpane" data-pane="utm">
+          <label class="field"><span>Easting</span>
+            <input type="number" step="any" id="utm-e" placeholder="429944.13" /></label>
+          <label class="field"><span>Northing</span>
+            <input type="number" step="any" id="utm-n" placeholder="6473934.89" /></label>
+          <label class="field"><span>Zona</span>
+            <input type="number" id="utm-z" value="20" /></label>
+        </div>
+
+        <label class="field"><span>Azimut (grados, opcional)</span>
+          <input type="number" step="any" min="0" max="360" id="man-az" placeholder="119" /></label>
+
+        <p class="form-error" id="manual-error" hidden></p>
+
+        <div class="compass-card__actions">
+          <button type="button" class="btn" id="manual-cancel">Cancelar</button>
+          <button type="submit" class="btn btn--primary">Guardar</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script type="module" src="js/app.js"></script>
+  </body>
+</html>
