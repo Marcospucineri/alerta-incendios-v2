@@ -20,6 +20,7 @@ import {
   MAX_SIGHT_DISTANCE,
 } from './geo.js';
 import { Compass, diagnose, assessReading } from './compass.js';
+import * as storage from './storage.js';
 
 const CENTER = [-32.0278273, -64.462219]; // Valle de Calamuchita
 const $ = (sel) => document.querySelector(sel);
@@ -96,6 +97,7 @@ function stopPicking() {
 
 function setPoint(slot, point) {
   state[slot].point = point;
+  persist();
   render();
   drawSlot(slot);
   map.setView([point.lat, point.lng], Math.max(map.getZoom(), 13));
@@ -103,6 +105,7 @@ function setPoint(slot, point) {
 
 function setAzimuth(slot, azimuth) {
   state[slot].azimuth = normalizeAzimuth(azimuth);
+  persist();
   render();
   drawSlot(slot);
   recompute();
@@ -113,7 +116,20 @@ function clearSlot(slot) {
   removeLayer(layers.markers, slot);
   removeLayer(layers.rays, slot);
   clearResult();
+  persist();
   render();
+}
+
+/**
+ * Guarda la sesión tras cada cambio. Entre la observación 1 y la 2 puede pasar
+ * mucho tiempo y el navegador puede descartar la pestaña en segundo plano.
+ */
+function persist() {
+  if (state.A.point || state.B.point) {
+    storage.save(state);
+  } else {
+    storage.clear();
+  }
 }
 
 function removeLayer(bag, key) {
@@ -127,6 +143,8 @@ function resetAll() {
   clearSlot('A');
   clearSlot('B');
   stopPicking();
+  storage.clear();
+  hideRestoreBanner();
   map.setView(CENTER, 12);
 }
 
@@ -574,6 +592,11 @@ function bind() {
   });
 
   $('#reset').addEventListener('click', resetAll);
+  $('#restore-dismiss').addEventListener('click', hideRestoreBanner);
+  $('#restore-discard').addEventListener('click', () => {
+    resetAll();
+    toast('Sesión guardada descartada.');
+  });
   $('#share-wa').addEventListener('click', shareWhatsApp);
   $('#copy-coords').addEventListener('click', copyCoords);
 
@@ -596,8 +619,16 @@ function bind() {
   range.addEventListener('input', () => {
     state.errorDeg = parseInt(range.value, 10);
     $('#err-out').textContent = `±${state.errorDeg}°`;
+    persist();
     if (state.result) recompute();
   });
+
+  // Seguro extra: iOS puede descartar la pestaña en segundo plano sin aviso.
+  // 'visibilitychange' es el último punto confiable para guardar.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persist();
+  });
+  window.addEventListener('pagehide', persist);
 
   document.addEventListener('keydown', (ev) => {
     if (ev.key !== 'Escape') return;
@@ -607,6 +638,60 @@ function bind() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Restauración de la sesión
+// ---------------------------------------------------------------------------
+
+/**
+ * Restaura lo que haya quedado guardado. No se hace en silencio: el usuario
+ * tiene que saber que está viendo datos viejos y de cuándo son, porque un punto
+ * cargado hace horas puede ya no corresponder a lo que está observando.
+ */
+function restore() {
+  const saved = storage.load();
+  if (!saved) return;
+
+  state.A = saved.A;
+  state.B = saved.B;
+  state.errorDeg = saved.errorDeg;
+
+  $('#err-range').value = String(state.errorDeg);
+  $('#err-out').textContent = `±${state.errorDeg}°`;
+
+  render();
+  drawSlot('A');
+  drawSlot('B');
+  recompute();
+
+  // Encuadrar lo restaurado; si ya hay resultado, recompute() se encargó.
+  if (!state.result) {
+    const pts = [state.A.point, state.B.point].filter(Boolean);
+    if (pts.length === 1) {
+      map.setView([pts[0].lat, pts[0].lng], 14);
+    } else if (pts.length === 2) {
+      map.fitBounds(pts.map((p) => [p.lat, p.lng]), { padding: [60, 60], maxZoom: 15 });
+    }
+  }
+
+  showRestoreBanner(saved);
+}
+
+function showRestoreBanner(saved) {
+  const cargados = [saved.A.point && '1', saved.B.point && '2'].filter(Boolean);
+  const detalle =
+    cargados.length === 2
+      ? 'Se recuperaron los dos puntos'
+      : `Se recuperó el punto ${cargados[0]}`;
+  $('#restore-text').textContent =
+    `${detalle} de la sesión guardada ${storage.describeAge(saved.savedAt)}.`;
+  $('#restore-banner').hidden = false;
+}
+
+function hideRestoreBanner() {
+  $('#restore-banner').hidden = true;
+}
+
 initMap();
 bind();
 render();
+restore();
